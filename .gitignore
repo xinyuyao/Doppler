@@ -1,0 +1,6 @@
+*.pt
+.vscode/*
+wandb/*
+__pycache__/*
+env/.env
+pretrain_models/*
