@@ -1,0 +1,27 @@
+BootStrap: docker
+From: ubuntu:20.04
+
+%post
+  echo "Installing required packages..."
+  apt-get update
+  apt-get install -y python3-pip
+  apt-get install -y libcurl4 
+  apt-get install -y openssh-client
+  pip3 install numpy
+  pip3 install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1
+  pip3 install  dgl -f https://data.dgl.ai/wheels/torch-2.4/cu121/repo.html
+  pip3 install gym
+  pip3 install pandas
+  pip3 install pyyaml
+  pip3 install pydantic
+  pip3 install dgllife
+  pip3 install rdkit
+  pip3 install matplotlib
+  pip3 install wandb
+  pip3 install pexpect
+  pip3 install python-dotenv
+  pip3 install simpy
+  pip3 install networkx
+
+%environment
+  export DGLBACKEND=pytorch

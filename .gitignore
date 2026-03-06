@@ -1,6 +1,7 @@
 *.pt
 .vscode/*
 wandb/*
-__pycache__/*
+__pycache__
 env/.env
 pretrain_models/*
+heuristic_log/*

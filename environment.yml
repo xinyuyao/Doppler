@@ -1,0 +1,30 @@
+name: doppler
+channels:
+  - dglteam/label/th24_cu121
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pytorch=2.4.1
+  - torchvision=0.19.1
+  - torchaudio=2.4.1
+  - pytorch-cuda=12.1
+  - dgl
+  - pip
+  - pip:
+    - dgllife
+    - rdkit
+    - gymnasium
+    - torchdata==0.7.0
+    - simpy
+    - pexpect
+    - python-dotenv
+    - wandb
+    - networkx
+    - matplotlib
+    - numpy<2
+    - pandas
+    - pyyaml
+    - pydantic

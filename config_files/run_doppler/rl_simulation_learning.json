@@ -1,0 +1,23 @@
+{
+    "num_device": 4,
+    "num_episode": 2000,
+    "learning_rate": 0.0001,
+    "node_epsilon": 0.2,
+    "device_epsilon": 0.2,
+    "il_weight": 0.0,
+    "simulation_pg_weight": 1.0,
+    "real_sys_pg_weight": 0.0,
+    "entropy_weight": 0.0,
+    "run_il": false,
+    "run_sim_rl": true,
+    "run_real_sys_rl": false,
+    "use_node_policy_network": true,
+    "use_device_policy_network": true,
+    "use_placeto": false,
+    "use_gdp": false,
+    "compute_graph_path": "compute_graph/chain_mm_112nodes.txt",
+    "load_pretrain_node_policy_path": "",
+    "load_pretrain_device_policy_path": "",
+    "log_path": "heuristic_log/",
+    "use_wandb": false
+}

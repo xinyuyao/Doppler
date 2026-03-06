@@ -1,5 +1,6 @@
 import torch
 
+
 class ComputeNode:
     def __init__(self, idx, compute_value, communicate_value):
         self.idx = idx
@@ -8,6 +9,7 @@ class ComputeNode:
         self.longest_path_value = 0
         self.children = []
         self.longest_path = []
+
 
 def compute_critical_paths(num_node, comp_cost, comm_cost, input_list, output_list):
     compute_nodes = _prepare_node_data(

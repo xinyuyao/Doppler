@@ -1,36 +1,40 @@
-from collections import namedtuple
 import os
 import time
+from collections import namedtuple
 
 import networkx as nx
-import simpy
 import pexpect
-from dotenv import load_dotenv
+import simpy
 import torch
+from dotenv import load_dotenv
 
 load_dotenv()
 
-class Simulator():
+
+class Simulator:
     def __init__(self, graph, comm_cost, comp_cost):
         self.graph = graph
         self.comm_cost = comm_cost
         self.comp_cost = comp_cost
-    
+
     def get_cost(self, dev_assign):
 
         G = self.graph.to_networkx().to_directed()
-        nx.set_node_attributes(G, {i: {'start_time': [], 'end_time': [], 'comp_time': [] } for i in G.nodes})
-        nx.set_edge_attributes(G, {i: {'arrive_time': [], 'comm_time': []} for i in G.edges})
+        nx.set_node_attributes(
+            G, {i: {"start_time": [], "end_time": [], "comp_time": []} for i in G.nodes}
+        )
+        nx.set_edge_attributes(
+            G, {i: {"arrive_time": [], "comm_time": []} for i in G.edges}
+        )
 
-        Op = namedtuple('Op', 'id inputs outputs comp_time dev')
-
+        Op = namedtuple("Op", "id inputs outputs comp_time dev")
 
         def communicate(env, finish_event, e, time):
             # print(f"{env.now: .2f}: Op {e1} --> Op {e2} for {time}")
             yield finish_event
             yield env.timeout(time)
-            G.edges[e]['arrive_time'].append(env.now)
-            G.edges[e]['comm_time'].append(time)
+            G.edges[e]["arrive_time"].append(env.now)
+            G.edges[e]["comm_time"].append(time)
             return env.now
 
         def compute(env, op):
@@ -39,11 +43,11 @@ class Simulator():
             times = dict(zip(op.inputs.keys(), times))
 
             with op.dev.request() as req:  # Generate a request event
-                yield req                    # Wait for access
-                G.nodes[op.id]['start_time'].append(env.now)
+                yield req  # Wait for access
+                G.nodes[op.id]["start_time"].append(env.now)
                 yield env.timeout(op.comp_time)
-                G.nodes[op.id]['end_time'].append(env.now)
-                G.nodes[op.id]['comp_time'].append(op.comp_time)
+                G.nodes[op.id]["end_time"].append(env.now)
+                G.nodes[op.id]["comp_time"].append(op.comp_time)
             # print(f"{self.env.now: .2f}: Op {o} --> Dev {des} finished. Running {self.comp_time: .2f}")
 
             op.outputs.succeed()
@@ -58,7 +62,14 @@ class Simulator():
         for e in G.edges:
             d1 = dev_assign[e[0]]
             d2 = dev_assign[e[1]]
-            comm_events[e[:2]] = env.process(communicate(env, finish_event[e[0]], e, self.communication_latency(e[0], e[1], d1, d2)))
+            comm_events[e[:2]] = env.process(
+                communicate(
+                    env,
+                    finish_event[e[0]],
+                    e,
+                    self.communication_latency(e[0], e[1], d1, d2),
+                )
+            )
 
         ops = {}
         processes = {}
@@ -68,38 +79,40 @@ class Simulator():
             inputs = {e: comm_events[e] for e in G.in_edges(o)}
             outputs = finish_event[o]
             des = dev_assign[o]
-            ops[o] = Op(o, inputs, outputs, self.computation_latency(o, des), devices[des])
+            ops[o] = Op(
+                o, inputs, outputs, self.computation_latency(o, des), devices[des]
+            )
             processes[o] = env.process(compute(env, ops[o]))
 
-        while env.peek() < float('inf'):
+        while env.peek() < float("inf"):
             env.step()
-        
-        return env.now.clone().detach()/1e10
-    
+
+        return env.now.clone().detach() / 1e10
+
     def communication_latency(self, op1, op2, dev1, dev2):
         if dev1 == dev2:
             return 0
         else:
             a = self.comm_cost[op1]
             return a
-        
+
     def computation_latency(self, op, dev):
         a = self.comp_cost[op]
         return a
 
-class RealExecuteEngine():
+
+class RealExecuteEngine:
     def __init__(self):
-        self.cpp_file_path = "system_running_time.txt"
+        self.cpp_file_path = "einsum_running_time.txt"
         self.python_file_path = "rl_assignment.txt"
-        
-    
+
     def get_cost(self, curr_assignment):
         self.write_rl_assignment_to_file(curr_assignment)
-        running_time = self.get_system_cost()
-        print("Receive system running time: ", running_time)
-        
+        running_time = self.get_einsummable_cost()
+        print("Receive einsummable running time: ", running_time)
+
         return torch.tensor(running_time)
-    
+
     def write_rl_assignment_to_file(self, loc_assignment):
         REMOTE_USER = os.getenv("REMOTE_USER")
         REMOTE_IP = os.getenv("REMOTE_IP")
@@ -108,14 +121,16 @@ class RealExecuteEngine():
 
         loc_str = [str(item) for item in loc_assignment]
         rl_assignment = ",".join(loc_str)
-        
+
         with open(self.python_file_path, "w") as f:
             f.write(rl_assignment)
-        
+
         print("REMOTE_USER: ", REMOTE_USER)
         print("REMOTE_IP: ", REMOTE_IP)
-        self.send_file(self.python_file_path, REMOTE_USER, REMOTE_IP, REMOTE_PATH, PASSWORD)
-    
+        self.send_file(
+            self.python_file_path, REMOTE_USER, REMOTE_IP, REMOTE_PATH, PASSWORD
+        )
+
     def send_file(self, local_path, remote_user, remote_ip, remote_path, password):
         command = f"scp {local_path} {remote_user}@{remote_ip}:{remote_path}"
         child = pexpect.spawn(command)
@@ -124,8 +139,8 @@ class RealExecuteEngine():
         child.expect("password:")
         child.sendline(password)
         child.expect(pexpect.EOF)  # Wait for the command to finish
-    
-    def get_system_cost(self):
+
+    def get_einsummable_cost(self):
         # Wait for the file from C++ node
         self.wait_for_file(self.cpp_file_path)
 
@@ -136,9 +151,9 @@ class RealExecuteEngine():
         # Remove the file
         os.remove(self.cpp_file_path)
 
-        return int(content)
+        return float(content)
 
     def wait_for_file(self, file_path):
         """Wait until the file exists."""
         while not os.path.exists(file_path):
-            time.sleep(3)
+            time.sleep(4)

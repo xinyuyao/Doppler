@@ -1,17 +1,19 @@
-import time
 import os
+import time
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from dgllife.model.gnn import MPNNGNN
-import numpy as np
-from torch.distributions.categorical import Categorical
 import wandb
+from dgllife.model.gnn import MPNNGNN
+from torch.distributions.categorical import Categorical
+
 
 class Device_Policy(nn.Module):
-    
-    def __init__(self, num_device, num_feat, num_device_feat, device, hidden1=128, hidden2=64):
+    def __init__(
+        self, num_device, num_feat, num_device_feat, device, hidden1=128, hidden2=64
+    ):
         super(Device_Policy, self).__init__()
 
         self.ndevices = num_device
@@ -30,8 +32,16 @@ class Device_Policy(nn.Module):
         self.ffnn_layer2 = layer_init(nn.Linear(num_feat, hidden1))
         self.ffnn_layer3 = layer_init(nn.Linear(hidden1 * 4, hidden2))
         self.ffnn_layer4 = layer_init(nn.Linear(hidden2, 1))
-    
-    def forward(self, g, pred_node, device_feat_state, device_assign_state, curr_step, state=None):
+
+    def forward(
+        self,
+        g,
+        pred_node,
+        device_feat_state,
+        device_assign_state,
+        curr_step,
+        state=None,
+    ):
         if state is None:
             state = g.ndata["feat"]
 
@@ -77,9 +87,18 @@ class Device_Policy(nn.Module):
 
         return output.view(-1)
 
+
 class Node_Policy(nn.Module):
-    
-    def __init__(self, num_device, num_feat, device, b_level_dict, t_level_dict, hidden1=128, hidden2=64):
+    def __init__(
+        self,
+        num_device,
+        num_feat,
+        device,
+        b_level_dict,
+        t_level_dict,
+        hidden1=128,
+        hidden2=64,
+    ):
         super(Node_Policy, self).__init__()
         self.mpnn_layer = MPNNGNN(
             node_in_feats=num_feat,
@@ -97,7 +116,7 @@ class Node_Policy(nn.Module):
         self.device = device  # run on cpu/gpu
         self.b_level_nodes_dict = b_level_dict
         self.t_level_nodes_dict = t_level_dict
-    
+
     def forward(self, g, legal_action, curr_step, state=None):
         if state is None:
             state = g.ndata["feat"]
@@ -139,81 +158,93 @@ class Node_Policy(nn.Module):
         h = m(self.ffnn_layer2(feat_representation))
         output = self.ffnn_layer3(h)
         return output.view(-1)
-    
 
 
 class RLAgent:
-    def __init__(self, 
-                 num_device, 
-                 num_node_feat, 
-                 num_device_feat, 
-                 b_level_dict,
-                 t_level_dict,
-                 b_level_cost,
-                 lr,
-                 lr_decay,
-                 device,
-                 pretrain_node_policy_path=None,
-                 pretrain_device_policy_path=None):
-        
+    def __init__(
+        self,
+        num_device,
+        num_node_feat,
+        num_device_feat,
+        b_level_dict,
+        t_level_dict,
+        b_level_cost,
+        lr,
+        lr_decay,
+        device,
+        pretrain_node_policy_path=None,
+        pretrain_device_policy_path=None,
+    ):
+
         self.num_device = num_device
         self.num_node_feat = num_node_feat
         self.num_device_feat = num_device_feat
         self.device = device
-        
+
         self.b_level_dict = b_level_dict
         self.t_level_dict = t_level_dict
         self.b_level_cost = b_level_cost
-        
+
         self.lr = lr
         self.lr_decay = lr_decay
 
-        self.node_policy = Node_Policy(self.num_device, self.num_node_feat, self.device, self.b_level_dict, self.t_level_dict,)
-        self.device_policy = Device_Policy(self.num_device, self.num_node_feat, self.num_device_feat, self.device)
+        self.node_policy = Node_Policy(
+            self.num_device,
+            self.num_node_feat,
+            self.device,
+            self.b_level_dict,
+            self.t_level_dict,
+        )
+        self.device_policy = Device_Policy(
+            self.num_device, self.num_node_feat, self.num_device_feat, self.device
+        )
         self.node_optim = torch.optim.Adam(list(self.node_policy.parameters()), lr=lr)
-        self.device_optim = torch.optim.Adam(list(self.device_policy.parameters()), lr=lr)
-        
+        self.device_optim = torch.optim.Adam(
+            list(self.device_policy.parameters()), lr=lr
+        )
+
         if pretrain_node_policy_path:
             node_policy_state_dict = torch.load(
-                                        os.path.join("pretrain_models/", pretrain_node_policy_path),
-                                        map_location=device,
-                                        weights_only=True,
-                                        )
+                os.path.join("pretrain_models/", pretrain_node_policy_path),
+                map_location=device,
+                weights_only=True,
+            )
             self.node_policy.load_state_dict(node_policy_state_dict)
-            
+
         if pretrain_device_policy_path:
             device_policy_state_dict = torch.load(
-                                        os.path.join("pretrain_models/", pretrain_device_policy_path),
-                                        map_location=device,
-                                        weights_only=True,
-                                        )
+                os.path.join("pretrain_models/", pretrain_device_policy_path),
+                map_location=device,
+                weights_only=True,
+            )
             self.device_policy.load_state_dict(device_policy_state_dict)
-    
+
     def reset(self):
         self.node_log_probs = []
         self.device_log_probs = []
-        
+
         self.cp_node_log_probs = []
         self.cp_device_log_probs = []
-        
+
         self.node_entropy = []
         self.device_entropy = []
-        
+
         self.node_match_cp = 0
         self.device_match_cp = 0
-    
-    def node_selection(self, 
-                       g, 
-                       node_epsilon, 
-                       legal_nodes,
-                       curr_step,
-                       ):
-        
+
+    def node_selection(
+        self,
+        g,
+        node_epsilon,
+        legal_nodes,
+        curr_step,
+    ):
+
         output = self.node_policy(g, legal_nodes, curr_step)
-        
+
         output_softmax = F.softmax(output, dim=0)
         node_prob = Categorical(output_softmax)
-        
+
         random_number = torch.rand(1).item()
         if random_number > node_epsilon:
             # exploit
@@ -223,33 +254,37 @@ class RLAgent:
             action_id = torch.randint(0, output_softmax.size(0), (1,))
         action = convert_to_node_id(legal_nodes, action_id)
         self.node_log_probs.append(node_prob.log_prob(action_id))
-        self.node_entropy.append(torch.sum(output_softmax * F.log_softmax(output, dim=-1)))
-        
+        self.node_entropy.append(
+            torch.sum(output_softmax * F.log_softmax(output, dim=-1))
+        )
+
         # collect heuristic log prob
         cp_node_log_probs = torch.zeros(1)
         cp_nodes = get_cp_node_list(legal_nodes, self.b_level_cost)
         for cn in cp_nodes:
             cp_node_log_probs += node_prob.log_prob(cn)
         self.cp_node_log_probs.append(cp_node_log_probs)
-        
+
         if action_id in cp_nodes:
             self.node_match_cp += 1
-                
+
         return action.item()
-            
-        
-    def device_selection(self,
-                      g,
-                      chosen_op,# The opeartion for which a device is being selected
-                      device_epsilon,
-                      curr_step,
-                      device_feat_state=None,
-                      next_device_assign_state=None,
-                      ):
-        output = self.device_policy(g, chosen_op, device_feat_state, next_device_assign_state, curr_step)
+
+    def device_selection(
+        self,
+        g,
+        chosen_op,  # The opeartion for which a device is being selected
+        device_epsilon,
+        curr_step,
+        device_feat_state=None,
+        next_device_assign_state=None,
+    ):
+        output = self.device_policy(
+            g, chosen_op, device_feat_state, next_device_assign_state, curr_step
+        )
         output_softmax = F.softmax(output, dim=0)
         device_probs = Categorical(output_softmax)
-        
+
         random_number = torch.rand(1).item()
         if random_number > device_epsilon:
             # exploit
@@ -257,46 +292,57 @@ class RLAgent:
         else:
             # explore
             action = torch.randint(0, output_softmax.size(0), (1,))[0]
-            
-        
+
         self.device_log_probs.append(device_probs.log_prob(action))
-        self.device_entropy.append(torch.sum(output_softmax * F.log_softmax(output, dim=-1)))
-        
+        self.device_entropy.append(
+            torch.sum(output_softmax * F.log_softmax(output, dim=-1))
+        )
+
         # collect heuristic log prob
         cp_device_log_probs = torch.zeros(1)
         cp_device = get_cp_device_list(device_feat_state)
         for cd in cp_device:
             cp_device_log_probs += device_probs.log_prob(cd)
         self.cp_device_log_probs.append(cp_device_log_probs)
-        
+
         if action in cp_device:
             self.device_match_cp += 1
-        
+
         return action.item()
-        
-    
+
     def cp_node_selection(self, legal_nodes):
         cp_nodes = get_cp_node_list(legal_nodes, self.b_level_cost)
-        
+
         chosen_index = torch.randint(0, cp_nodes.size(0), (1,)).item()
         return legal_nodes[chosen_index]
-    
+
     def cp_device_selection(self, device_feat_state):
         cp_devices = get_cp_device_list(device_feat_state)
         chosen_index = torch.randint(0, cp_devices.size(0), (1,)).item()
         return cp_devices[chosen_index].item()
-        
-    def finish_episode(self, rewards, dones, use_wandb=False, pg_weight=None, imitation_weight=None, entropy_weight=None, update_node=False, update_device=False, gamma=0.99):
+
+    def finish_episode(
+        self,
+        rewards,
+        dones,
+        use_wandb=False,
+        pg_weight=None,
+        imitation_weight=None,
+        entropy_weight=None,
+        update_node=False,
+        update_device=False,
+        gamma=0.99,
+    ):
         self.lr -= self.lr_decay
         self.node_optim.lr = self.lr
         self.device_optim.lr = self.lr
-    
+
         R = 0
         node_policy_loss = 0
         node_pg_loss = 0
         node_imitation_loss = 0
         node_entropy_loss = 0
-    
+
         device_policy_loss = 0
         device_pg_loss = 0
         device_imitation_loss = 0
@@ -306,26 +352,32 @@ class RLAgent:
         for t in reversed(range(len(rewards))):
             if t == len(rewards) - 1:
                 continue
-            
+
             rewards[t] += gamma * rewards[t + 1] * (1.0 - dones[t])
-            
+
         returns = torch.tensor(rewards, device=self.device)
-        
+
         if update_node:
             self.node_optim.zero_grad()
 
             for node_log_prob, R in zip(self.node_log_probs, returns):
-                node_pg_loss = node_pg_loss - pg_weight * node_log_prob.to(self.device) * R 
-        
+                node_pg_loss = (
+                    node_pg_loss - pg_weight * node_log_prob.to(self.device) * R
+                )
+
             for cp_node_log_prob, R in zip(self.cp_node_log_probs, returns):
-                node_imitation_loss = node_imitation_loss - imitation_weight * cp_node_log_prob.to(self.device) 
-                
+                node_imitation_loss = (
+                    node_imitation_loss
+                    - imitation_weight * cp_node_log_prob.to(self.device)
+                )
+
             for node_entropy, R in zip(self.node_entropy, returns):
-                node_entropy_loss = node_entropy_loss + entropy_weight * node_entropy.to(self.device)
-                
-            
+                node_entropy_loss = (
+                    node_entropy_loss + entropy_weight * node_entropy.to(self.device)
+                )
+
             node_policy_loss = node_pg_loss + node_imitation_loss + node_entropy_loss
-            
+
             node_policy_loss.backward()
             self.node_optim.step()
             print("node_policy_loss: ", node_policy_loss)
@@ -334,37 +386,46 @@ class RLAgent:
                 wandb.log({"node_imitation_loss": node_imitation_loss.item()})
                 wandb.log({"node_entropy_loss": node_entropy_loss.item()})
                 wandb.log({"node_match_cp": self.node_match_cp})
-        
+
         if update_device:
             self.device_optim.zero_grad()
-            
+
             for device_log_prob, R in zip(self.device_log_probs, returns):
-                device_pg_loss = device_pg_loss - pg_weight * device_log_prob.to(self.device) * R
-        
+                device_pg_loss = (
+                    device_pg_loss - pg_weight * device_log_prob.to(self.device) * R
+                )
+
             for cp_device_log_prob, R in zip(self.cp_device_log_probs, returns):
-                device_imitation_loss = device_imitation_loss - imitation_weight * cp_device_log_prob.to(self.device) 
-            
+                device_imitation_loss = (
+                    device_imitation_loss
+                    - imitation_weight * cp_device_log_prob.to(self.device)
+                )
+
             for device_entropy, R in zip(self.device_entropy, returns):
-                device_entropy_loss = device_entropy_loss + entropy_weight * device_entropy.to(self.device)
-                
-            device_policy_loss = device_pg_loss + device_imitation_loss + device_entropy_loss
+                device_entropy_loss = (
+                    device_entropy_loss
+                    + entropy_weight * device_entropy.to(self.device)
+                )
+
+            device_policy_loss = (
+                device_pg_loss + device_imitation_loss + device_entropy_loss
+            )
             device_policy_loss.backward()
             self.device_optim.step()
             print("device_policy_loss: ", device_policy_loss)
-            
-            
+
             if use_wandb:
                 wandb.log({"device_pg_loss": device_pg_loss.item()})
                 wandb.log({"device_imitation_loss": device_imitation_loss.item()})
                 wandb.log({"device_entropy_loss": device_entropy_loss.item()})
                 wandb.log({"device_match_cp": self.device_match_cp})
-                    
+
         del self.node_log_probs[:]
         del self.node_entropy[:]
         del self.device_log_probs[:]
         del self.device_entropy[:]
-    
-    
+
+
 def convert_to_node_id(legal_action, action_idx):
     idx = 0
     for v in legal_action:
@@ -383,6 +444,7 @@ def normalize_feat_state(feat_state):
     std = feat_state.std(dim=0, unbiased=False)
     normalized_feat_state = (feat_state - mean) / (std + 1e-6)
     return normalized_feat_state
+
 
 def calculate_device_embedding_and_cnt(device_state, node_embeddings, device):
     device_embedding_list = []
@@ -410,11 +472,13 @@ def calculate_device_embedding_and_cnt(device_state, node_embeddings, device):
 
     return device_embedding_sum
 
+
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     # if hasattr(layer, 'weight'):
     torch.nn.init.orthogonal_(layer.weight)
     torch.nn.init.constant_(layer.bias, bias_const)
     return layer
+
 
 def compute_level_embedding(mpnn_forward, level_nodes_dict):
     # Initialize lists to collect the concatenated embeddings and node indices
@@ -448,6 +512,7 @@ def compute_level_embedding(mpnn_forward, level_nodes_dict):
     normalized_embeddings = (sum_embeddings - mean) / std
     return normalized_embeddings
 
+
 def get_cp_device_list(device_feat_state):
     # Extract the last column (start time column)
     start_time = device_feat_state[:, -1].view(-1)
@@ -456,8 +521,9 @@ def get_cp_device_list(device_feat_state):
     min_start_time = torch.min(start_time)
 
     min_indices = torch.nonzero(start_time == min_start_time).squeeze(1)
-    
+
     return min_indices
+
 
 def get_cp_node_list(legal_nodes, b_level_cost):
     legal_indices = [value for value in legal_nodes if value != -1]
@@ -471,5 +537,5 @@ def get_cp_node_list(legal_nodes, b_level_cost):
     max_indices = torch.nonzero(
         b_level_cost_for_legal_nodes == max_b_level_cost_for_legal_nodes
     ).squeeze(1)
-    
+
     return max_indices

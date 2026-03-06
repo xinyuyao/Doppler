@@ -2,30 +2,33 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 def weights_init_(m):
     if isinstance(m, nn.Linear):
         torch.nn.init.xavier_uniform_(m.weight, gain=1)
         torch.nn.init.constant_(m.bias, 0)
 
+
 def reset(nn):
     def _reset(item):
-        if hasattr(item, 'reset_parameters'):
+        if hasattr(item, "reset_parameters"):
             item.reset_parameters()
 
     if nn is not None:
-        if hasattr(nn, 'children') and len(list(nn.children())) > 0:
+        if hasattr(nn, "children") and len(list(nn.children())) > 0:
             for item in nn.children():
                 _reset(item)
         else:
             _reset(nn)
 
+
 class FNN(nn.Module):
     def __init__(self, input_size, hidden_layer_sizes, out_size):
         super(FNN, self).__init__()
         self.layers = nn.ModuleList([])
-        sizes = [input_size] + hidden_layer_sizes+[out_size]
-        for i in range(len(sizes)-1):
-            self.layers.append(nn.Linear(sizes[i], sizes[i+1]))
+        sizes = [input_size] + hidden_layer_sizes + [out_size]
+        for i in range(len(sizes) - 1):
+            self.layers.append(nn.Linear(sizes[i], sizes[i + 1]))
         self.apply(weights_init_)
         self.reset_parameters()
 
@@ -36,16 +39,7 @@ class FNN(nn.Module):
     def forward(self, x):
         y = x
         for i, layer in enumerate(self.layers):
-            y  = layer(y)
+            y = layer(y)
             if i != len(self.layers) - 1:
                 y = F.relu(y)
         return y
-
-
-
-
-
-
-
-
-

@@ -1,28 +1,25 @@
 import copy
 
-import gym
+import gymnasium as gym
 import torch
 
 
 class Env(gym.Env):
     def __init__(self, compute_g, cost_g, comm_cost, comp_cost, ndevices, device):
         self.cost_g = cost_g
-        self.init_compute_g = compute_g 
+        self.init_compute_g = compute_g
         self.comm_cost = comm_cost
         self.comp_cost = comp_cost
-        self.episode_length = cost_g.number_of_nodes() 
-        self.num_node = cost_g.number_of_nodes() 
+        self.episode_length = cost_g.number_of_nodes()
+        self.num_node = cost_g.number_of_nodes()
         self.ndevices = ndevices
-        self.device = device # gpu/cpu
-        
-        
+        self.device = device  # gpu/cpu
+
         self.input_nodes_dict = {}
         for node in range(cost_g.num_nodes()):
             input_nodes = list(set(cost_g.predecessors(node)))
             self.input_nodes_dict[node] = input_nodes
-        
-        
-    
+
     def reset(self):
         self.curr_loc_assign = torch.full((self.num_node,), -1)
         self.visited_node = []
@@ -30,49 +27,59 @@ class Env(gym.Env):
         self.compute_graph = copy.deepcopy(self.init_compute_g)
         self.legal_actions = self._init_legal_actions()
         done = False
-        
+
         self.node_assignment_dict = {}
-        self.node_start_end_compute_dict = {key: [-1, -1] for key in range(self.episode_length)}
+        self.node_start_end_compute_dict = {
+            key: [-1, -1] for key in range(self.episode_length)
+        }
         self.earliest_time_to_start_list = []
         self.device_available_to_start_compute_time = torch.zeros(self.ndevices)
         self.schedule = torch.zeros(self.ndevices, self.num_node)
-        
+
         return self.compute_graph, done, self.legal_actions
-    
+
     def step(self, node_action, device_action, update_graph=None):
         self.curr_loc_assign[node_action] = device_action
         self.visited_node.append(node_action)
         self.curr_step += 1
 
-        if update_graph: # Placeto only
-            self.compute_graph.ndata["feat"][node_action][2+device_action] = 1 # update one-hot device
-            self.compute_graph.ndata["feat"][node_action][2+self.ndevices] = 0 # update current node/not
-            self.compute_graph.ndata["feat"][node_action][3+self.ndevices] = 1 # update visted/unvisited
-        
+        if update_graph:  # Placeto only
+            self.compute_graph.ndata["feat"][node_action][2 + device_action] = (
+                1  # update one-hot device
+            )
+            self.compute_graph.ndata["feat"][node_action][2 + self.ndevices] = (
+                0  # update current node/not
+            )
+            self.compute_graph.ndata["feat"][node_action][3 + self.ndevices] = (
+                1  # update visted/unvisited
+            )
+
         if self.curr_step == self.episode_length:
             done = True
             reward = 0
         else:
             done = False
             reward = 0
-        
+
         self.schedule[device_action][node_action] = 1
         self._update_legal_actions(node_action)
         self._update_device_info(node_action, device_action)
-    
-    
+
         return self.compute_graph, done, self.legal_actions, reward
-    
-    def step_node(self, node_action):
-        self.earliest_time_to_start_list = self._calculate_earliest_avaiable_device(node_action)
+
+    def step_node(self, node_action, update_graph=None):
+        self.earliest_time_to_start_list = self._calculate_earliest_avaiable_device(
+            node_action
+        )
 
         self.device_features = self._compute_device_state(node_action)
-        
-        if update_graph: # Placeto only
-            self.compute_graph.ndata["feat"][node_action][2+self.ndevices] = 1 # update current node/not
-            
+
+        if update_graph:  # Placeto only
+            self.compute_graph.ndata["feat"][node_action][2 + self.ndevices] = (
+                1  # update current node/not
+            )
         return self.device_features, self.schedule
-    
+
     def _init_legal_actions(self):
         executable_node = []
         for node in range(self.num_node):
@@ -80,7 +87,6 @@ class Env(gym.Env):
             if len(predecessors) == 0:
                 executable_node.append(node)
         return executable_node
-
 
     def _update_legal_actions(self, last_selected_node):
         self.legal_actions.remove(last_selected_node)
@@ -90,8 +96,7 @@ class Env(gym.Env):
             predecessors = self.cost_g.predecessors(node)
             if all(pred.item() in self.visited_node for pred in predecessors):
                 self.legal_actions.append(node.item())
-        
-        
+                
     def _compute_device_state(
         self,
         node_action,
@@ -150,8 +155,7 @@ class Env(gym.Env):
             dim=1,
         )
         return device_feat_state
-                
-                
+
     def _update_device_info(self, node_action, device_action):
         self.node_assignment_dict[node_action] = device_action
         pred_node_compute_time = self.comp_cost[node_action]
@@ -164,7 +168,7 @@ class Env(gym.Env):
         self.node_start_end_compute_dict[node_action][1] = (
             self.device_available_to_start_compute_time[device_action].item()
         )
-    
+
     def _calculate_earliest_avaiable_device(self, node_action):
         input_loc_list = []
         transfer_time_list = []
@@ -193,7 +197,6 @@ class Env(gym.Env):
         )
 
         return earliest_time_to_start_list
-            
 
     def _check_earliest_available_device(
         self,
@@ -206,7 +209,9 @@ class Env(gym.Env):
             ealiest_time_due_to_input = float("-inf")
             for inp in range(len(input_loc_list)):
                 if i != input_loc_list[inp]:
-                    end_transfer_time = end_compute_time_list[inp] + transfer_time_list[inp]
+                    end_transfer_time = (
+                        end_compute_time_list[inp] + transfer_time_list[inp]
+                    )
                     ealiest_time_due_to_input = max(
                         ealiest_time_due_to_input, end_transfer_time
                     )
@@ -219,7 +224,8 @@ class Env(gym.Env):
                 self.device_available_to_start_compute_time[i]
             )
             earliest_time_to_start[i] = max(
-                ealiest_time_due_to_input, earliest_time_due_to_last_compute_on_same_device
+                ealiest_time_due_to_input,
+                earliest_time_due_to_last_compute_on_same_device,
             )
 
         earliest_time, earliest_device = earliest_time_to_start.min(dim=0)
