@@ -1,5 +1,4 @@
 import argparse
-990224
 import json
 import os
 
@@ -122,6 +121,21 @@ def get_args():
             config = json.load(f)
         for key, value in config.items():
             setattr(args, key, value)
+
+    ############ Require different compute graph path for different number of devices ############
+    if args.num_device == 4:
+        if "full_transformer" in args.compute_graph_path:
+            args.compute_graph_path = (
+                "compute_graph/full_transformer_layer_261nodes.txt"
+            )
+        elif "transformer_block" in args.compute_graph_path:
+            args.compute_graph_path = "compute_graph/transformer_block_215nodes.txt"
+
+    if args.num_device == 8:
+        if "full_transformer" in args.compute_graph_path:
+            args.compute_graph_path = "compute_graph/8gpu_full_transformer.txt"
+        elif "transformer_block" in args.compute_graph_path:
+            args.compute_graph_path = "compute_graph/8gpu_transformer_block.txt"
 
     return args
 
